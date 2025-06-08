@@ -178,6 +178,8 @@ class ChatSnowflakeCortex(BaseChatModel):
     def validate_environment(cls, values: Dict) -> Dict:
         try:
             from snowflake.snowpark import Session
+            from snowflake.snowpark.context import get_active_session
+            from snowflake.snowpark.exceptions import SnowparkSessionException
         except ImportError:
             raise ImportError(
                 """`snowflake-snowpark-python` package not found, please install:
@@ -185,43 +187,54 @@ class ChatSnowflakeCortex(BaseChatModel):
                 """
             )
 
-        values["snowflake_username"] = get_from_dict_or_env(
-            values, "snowflake_username", "SNOWFLAKE_USERNAME"
-        )
-        values["snowflake_password"] = convert_to_secret_str(
-            get_from_dict_or_env(values, "snowflake_password", "SNOWFLAKE_PASSWORD")
-        )
-        values["snowflake_account"] = get_from_dict_or_env(
-            values, "snowflake_account", "SNOWFLAKE_ACCOUNT"
-        )
-        values["snowflake_database"] = get_from_dict_or_env(
-            values, "snowflake_database", "SNOWFLAKE_DATABASE"
-        )
-        values["snowflake_schema"] = get_from_dict_or_env(
-            values, "snowflake_schema", "SNOWFLAKE_SCHEMA"
-        )
-        values["snowflake_warehouse"] = get_from_dict_or_env(
-            values, "snowflake_warehouse", "SNOWFLAKE_WAREHOUSE"
-        )
-        values["snowflake_role"] = get_from_dict_or_env(
-            values, "snowflake_role", "SNOWFLAKE_ROLE"
-        )
+        # if no session kwarg exists, build a Snowflake Session
+        if 'session' not in values.keys():
+            # first, attempt to build an active session, if executed within Snowflake environment
+            try:
+                values["session"] = get_active_session() # get active session if executed from inside Snowflake
+                
+                return values
 
-        connection_params = {
-            "account": values["snowflake_account"],
-            "user": values["snowflake_username"],
-            "password": values["snowflake_password"].get_secret_value(),
-            "database": values["snowflake_database"],
-            "schema": values["snowflake_schema"],
-            "warehouse": values["snowflake_warehouse"],
-            "role": values["snowflake_role"],
-            "client_session_keep_alive": "True",
-        }
-
-        try:
-            values["session"] = Session.builder.configs(connection_params).create()
-        except Exception as e:
-            raise ChatSnowflakeCortexError(f"Failed to create session: {e}")
+            # else, executed from client, so build a session from connection parameters
+            except(SnowparkSessionException):
+                
+                values["snowflake_username"] = get_from_dict_or_env(
+                    values, "snowflake_username", "SNOWFLAKE_USERNAME"
+                )
+                values["snowflake_password"] = convert_to_secret_str(
+                    get_from_dict_or_env(values, "snowflake_password", "SNOWFLAKE_PASSWORD")
+                )
+                values["snowflake_account"] = get_from_dict_or_env(
+                    values, "snowflake_account", "SNOWFLAKE_ACCOUNT"
+                )
+                values["snowflake_database"] = get_from_dict_or_env(
+                    values, "snowflake_database", "SNOWFLAKE_DATABASE"
+                )
+                values["snowflake_schema"] = get_from_dict_or_env(
+                    values, "snowflake_schema", "SNOWFLAKE_SCHEMA"
+                )
+                values["snowflake_warehouse"] = get_from_dict_or_env(
+                    values, "snowflake_warehouse", "SNOWFLAKE_WAREHOUSE"
+                )
+                values["snowflake_role"] = get_from_dict_or_env(
+                    values, "snowflake_role", "SNOWFLAKE_ROLE"
+                )
+    
+                connection_params = {
+                    "account": values["snowflake_account"],
+                    "user": values["snowflake_username"],
+                    "password": values["snowflake_password"].get_secret_value(),
+                    "database": values["snowflake_database"],
+                    "schema": values["snowflake_schema"],
+                    "warehouse": values["snowflake_warehouse"],
+                    "role": values["snowflake_role"],
+                    "client_session_keep_alive": "True",
+                }
+    
+            try:
+                values["session"] = Session.builder.configs(connection_params).create()
+            except Exception as e:
+                raise ChatSnowflakeCortexError(f"Failed to create session: {e}")
 
         return values
 
